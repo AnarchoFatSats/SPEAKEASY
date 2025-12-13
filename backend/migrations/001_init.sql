@@ -8,10 +8,11 @@ CREATE TABLE users (
     display_name    TEXT NOT NULL,
     phone_hash      TEXT,
     email_hash      TEXT,
-    status          TEXT NOT NULL DEFAULT 'active', -- added back for safety
-    banned_at       TIMESTAMPTZ,                    -- added back for safe
-    ban_reason      TEXT,                           -- added back for safety
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    status          TEXT NOT NULL DEFAULT 'active',
+    banned_at       TIMESTAMPTZ,
+    ban_reason      TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE UNIQUE INDEX users_phone_hash_key ON users (phone_hash) WHERE phone_hash IS NOT NULL;
@@ -21,7 +22,9 @@ CREATE UNIQUE INDEX users_email_hash_key ON users (email_hash) WHERE email_hash 
 CREATE TABLE devices (
     id                  UUID PRIMARY KEY,
     user_id             UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    device_name         TEXT,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_seen_at        TIMESTAMPTZ,
     revoked_at          TIMESTAMPTZ
 );
@@ -60,7 +63,9 @@ CREATE TABLE messages (
     from_device_id  UUID NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
     ciphertext_b64  TEXT NOT NULL,
     msg_type        TEXT NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    delivered       BOOLEAN NOT NULL DEFAULT FALSE,
+    delivered_at    TIMESTAMPTZ
 );
 
 CREATE INDEX messages_to_user_device_idx ON messages (to_user_id, to_device_id, created_at);
@@ -72,7 +77,9 @@ CREATE TABLE attachments (
     storage_key     TEXT NOT NULL,
     content_type    TEXT NOT NULL,
     size_bytes      BIGINT NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted         BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at      TIMESTAMPTZ
 );
 
 CREATE INDEX attachments_owner_idx ON attachments (owner_user_id);
