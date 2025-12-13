@@ -1,9 +1,11 @@
 openapi: 3.0.3
 info:
-  title: Speakeasy Relay API
-  version: 1.0.0
+  title: Speakeasy API
+  version: 0.1.0
+
 servers:
-  - url: http://localhost:8080
+  - url: https://api.speakeasy.example.com
+
 paths:
   /health:
     get:
@@ -11,9 +13,10 @@ paths:
       responses:
         '200':
           description: OK
-  /v1/auth/request_code:
+
+  /v1/auth/register:
     post:
-      summary: Request login code (OTP)
+      summary: Register a new user
       requestBody:
         required: true
         content:
@@ -21,35 +24,31 @@ paths:
             schema:
               type: object
               properties:
-                identifier:
+                display_name:
                   type: string
-                  description: phone or email
-              required: [identifier]
-      responses:
-        '200': { description: Code sent }
-  /v1/auth/verify_code:
-    post:
-      summary: Verify OTP and create session
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                identifier: { type: string }
-                code: { type: string }
-                device_info:
-                  type: object
-              required: [identifier, code]
+                phone:
+                  type: string
+                  nullable: true
+                email:
+                  type: string
+                  nullable: true
+              required: [display_name]
       responses:
         '200':
-          description: Session token
-  /v1/devices/register:
+          description: Registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id:
+                    type: string
+                  access_token:
+                    type: string
+
+  /v1/auth/login:
     post:
-      summary: Register device identity keys + push token
-      security:
-        - bearerAuth: []
+      summary: Login (placeholder, details TBD)
       requestBody:
         required: true
         content:
@@ -57,16 +56,31 @@ paths:
             schema:
               type: object
               properties:
-                device_id: { type: string, format: uuid }
-                platform: { type: string, enum: [ios, android] }
-                identity_key: { type: string, description: base64 public key }
-                push_token: { type: string }
-              required: [device_id, platform, identity_key]
+                phone:
+                  type: string
+                  nullable: true
+                email:
+                  type: string
+                  nullable: true
+                code:
+                  type: string
+              required: [code]
       responses:
-        '200': { description: OK }
-  /v1/keys/upload_bundle:
+        '200':
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id:
+                    type: string
+                  access_token:
+                    type: string
+
+  /v1/keys/upload:
     post:
-      summary: Upload signed prekey + one-time prekeys
+      summary: Upload prekey bundle for a device
       security:
         - bearerAuth: []
       requestBody:
@@ -74,43 +88,35 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                device_id: { type: string, format: uuid }
-                signed_prekey:
-                  type: object
-                  properties:
-                    key_id: { type: integer }
-                    public_key: { type: string }
-                    signature: { type: string }
-                  required: [key_id, public_key, signature]
-                one_time_prekeys:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      key_id: { type: integer }
-                      public_key: { type: string }
-                    required: [key_id, public_key]
-              required: [device_id, signed_prekey, one_time_prekeys]
+              $ref: '#/components/schemas/PrekeyUpload'
       responses:
-        '200': { description: OK }
-  /v1/keys/fetch_bundle/{user_id}:
+        '200':
+          description: Stored
+
+  /v1/keys/bundle/{user_id}:
     get:
-      summary: Fetch prekey bundle for a user
-      security:
-        - bearerAuth: []
+      summary: Get prekey bundle(s) for a user
       parameters:
         - in: path
           name: user_id
           required: true
-          schema: { type: string, format: uuid }
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
       responses:
         '200':
-          description: Prekey bundle
+          description: Prekey bundle list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PrekeyBundle'
+
   /v1/messages/send:
     post:
-      summary: Send encrypted message envelope(s)
+      summary: Send encrypted message envelope
       security:
         - bearerAuth: []
       requestBody:
@@ -118,36 +124,35 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                conversation_id: { type: string, format: uuid }
-                envelopes:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      recipient_device_id: { type: string, format: uuid }
-                      msg_type: { type: string }
-                      ciphertext: { type: string }
-                    required: [recipient_device_id, msg_type, ciphertext]
-              required: [conversation_id, envelopes]
+              $ref: '#/components/schemas/SendMessage'
       responses:
-        '200': { description: OK }
-  /v1/messages/inbox:
+        '200':
+          description: Accepted
+
+  /v1/messages/inbox/{user_id}:
     get:
-      summary: Fetch pending encrypted messages for this device
+      summary: Fetch pending message envelopes for a user
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: string
       security:
         - bearerAuth: []
-      parameters:
-        - in: query
-          name: device_id
-          required: true
-          schema: { type: string, format: uuid }
       responses:
-        '200': { description: List of envelopes }
+        '200':
+          description: Pending messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MessageEnvelope'
+
   /v1/attachments/presign:
     post:
-      summary: Get a pre-signed upload URL for encrypted attachment
+      summary: Create a presigned upload URL for an attachment
       security:
         - bearerAuth: []
       requestBody:
@@ -157,11 +162,57 @@ paths:
             schema:
               type: object
               properties:
-                content_type: { type: string }
-                size_bytes: { type: integer }
+                content_type:
+                  type: string
+                size_bytes:
+                  type: integer
               required: [content_type, size_bytes]
       responses:
-        '200': { description: Upload URL + object key }
+        '200':
+          description: Presigned URL info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attachment_id:
+                    type: string
+                  upload_url:
+                    type: string
+                  storage_key:
+                    type: string
+
+  /v1/backup/upload:
+    post:
+      summary: Upload encrypted backup blob
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BackupUpload'
+      responses:
+        '200':
+          description: Stored
+
+  /v1/backup/get:
+    get:
+      summary: Get encrypted backup blob for current user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Backup blob (if exists)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackupBlob'
+        '404':
+          description: No backup
+
+  # == ABUSE / SAFETY ADDITIONS ==
   /v1/users/block:
     post:
       summary: Block a user (prevent them from messaging you)
@@ -178,6 +229,7 @@ paths:
               required: [blocked_user_id]
       responses:
         '200': { description: OK }
+
   /v1/reports/submit:
     post:
       summary: Submit an abuse report
@@ -192,13 +244,121 @@ paths:
               properties:
                 reported_user_id: { type: string, format: uuid }
                 reason: { type: string }
-                decrypted_content: { type: string, description: "Optional decrypted prooof" }
+                decrypted_content: { type: string, description: "Optional decrypted proof" }
               required: [reported_user_id, reason]
       responses:
         '200': { description: Report received }
+
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+
+  schemas:
+    PrekeyUpload:
+      type: object
+      properties:
+        user_id:
+          type: string
+        device_id:
+          type: string
+        identity_key_ed25519_b64:
+          type: string
+        static_x25519_b64:
+          type: string
+        signed_prekey_x25519_b64:
+          type: string
+        signed_prekey_signature_b64:
+          type: string
+        one_time_prekeys_b64:
+          type: array
+          items:
+            type: string
+      required:
+        - user_id
+        - device_id
+        - identity_key_ed25519_b64
+        - static_x25519_b64
+        - signed_prekey_x25519_b64
+        - signed_prekey_signature_b64
+
+    PrekeyBundle:
+      type: object
+      properties:
+        user_id:
+          type: string
+        device_id:
+          type: string
+        identity_key_ed25519_b64:
+          type: string
+        static_x25519_b64:
+          type: string
+        signed_prekey_x25519_b64:
+          type: string
+        signed_prekey_signature_b64:
+          type: string
+        one_time_prekey_b64:
+          type: string
+          nullable: true
+
+    SendMessage:
+      type: object
+      properties:
+        to_user_id:
+          type: string
+        to_device_id:
+          type: string
+        from_device_id:
+          type: string
+        ciphertext_b64:
+          type: string
+        msg_type:
+          type: string
+      required:
+        - to_user_id
+        - to_device_id
+        - from_device_id
+        - ciphertext_b64
+        - msg_type
+
+    MessageEnvelope:
+      type: object
+      properties:
+        id:
+          type: string
+        to_user_id:
+          type: string
+        to_device_id:
+          type: string
+        from_user_id:
+          type: string
+        from_device_id:
+          type: string
+        ciphertext_b64:
+          type: string
+        msg_type:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    BackupUpload:
+      type: object
+      properties:
+        blob_b64:
+          type: string
+        version:
+          type: integer
+      required:
+        - blob_b64
+        - version
+
+    BackupBlob:
+      type: object
+      properties:
+        blob_b64:
+          type: string
+        version:
+          type: integer
