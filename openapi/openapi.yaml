@@ -1,0 +1,204 @@
+openapi: 3.0.3
+info:
+  title: Speakeasy Relay API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+  /v1/auth/request_code:
+    post:
+      summary: Request login code (OTP)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                identifier:
+                  type: string
+                  description: phone or email
+              required: [identifier]
+      responses:
+        '200': { description: Code sent }
+  /v1/auth/verify_code:
+    post:
+      summary: Verify OTP and create session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                identifier: { type: string }
+                code: { type: string }
+                device_info:
+                  type: object
+              required: [identifier, code]
+      responses:
+        '200':
+          description: Session token
+  /v1/devices/register:
+    post:
+      summary: Register device identity keys + push token
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device_id: { type: string, format: uuid }
+                platform: { type: string, enum: [ios, android] }
+                identity_key: { type: string, description: base64 public key }
+                push_token: { type: string }
+              required: [device_id, platform, identity_key]
+      responses:
+        '200': { description: OK }
+  /v1/keys/upload_bundle:
+    post:
+      summary: Upload signed prekey + one-time prekeys
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device_id: { type: string, format: uuid }
+                signed_prekey:
+                  type: object
+                  properties:
+                    key_id: { type: integer }
+                    public_key: { type: string }
+                    signature: { type: string }
+                  required: [key_id, public_key, signature]
+                one_time_prekeys:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      key_id: { type: integer }
+                      public_key: { type: string }
+                    required: [key_id, public_key]
+              required: [device_id, signed_prekey, one_time_prekeys]
+      responses:
+        '200': { description: OK }
+  /v1/keys/fetch_bundle/{user_id}:
+    get:
+      summary: Fetch prekey bundle for a user
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Prekey bundle
+  /v1/messages/send:
+    post:
+      summary: Send encrypted message envelope(s)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                conversation_id: { type: string, format: uuid }
+                envelopes:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      recipient_device_id: { type: string, format: uuid }
+                      msg_type: { type: string }
+                      ciphertext: { type: string }
+                    required: [recipient_device_id, msg_type, ciphertext]
+              required: [conversation_id, envelopes]
+      responses:
+        '200': { description: OK }
+  /v1/messages/inbox:
+    get:
+      summary: Fetch pending encrypted messages for this device
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: device_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: List of envelopes }
+  /v1/attachments/presign:
+    post:
+      summary: Get a pre-signed upload URL for encrypted attachment
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content_type: { type: string }
+                size_bytes: { type: integer }
+              required: [content_type, size_bytes]
+      responses:
+        '200': { description: Upload URL + object key }
+  /v1/users/block:
+    post:
+      summary: Block a user (prevent them from messaging you)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                blocked_user_id: { type: string, format: uuid }
+              required: [blocked_user_id]
+      responses:
+        '200': { description: OK }
+  /v1/reports/submit:
+    post:
+      summary: Submit an abuse report
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reported_user_id: { type: string, format: uuid }
+                reason: { type: string }
+                decrypted_content: { type: string, description: "Optional decrypted prooof" }
+              required: [reported_user_id, reason]
+      responses:
+        '200': { description: Report received }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

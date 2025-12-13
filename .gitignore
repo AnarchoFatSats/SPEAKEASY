@@ -1,0 +1,28 @@
+# Rust
+target/
+**/*.rs.bk
+
+# Flutter
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+
+# Node
+node_modules/
+npm-debug.log
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+*.swp
+.DS_Store
+
+# Secrets & Local Config
+.env
+*.pem
+*.key
