@@ -141,7 +141,22 @@ Tasks:
 
 ---
 
-## Phase 7 – Monetization & Harden
+---
+
+## Phase 7 – Web Client (React/Next.js)
+
+**Goal:** Secure web access via WASM crypto.
+
+Tasks:
+1. Initialize `web/` project (Next.js + TypeScript).
+2. Integrate `libsignal-protocol-javascript` (WASM preferred).
+3. Implement `IndexedDB` storage for keys/messages (encrypted).
+4. Implement Key Derivation (Passphrase -> DMK) for web unlock.
+5. Reuse backend API client from `openapi.yaml`.
+
+---
+
+## Phase 8 – Monetization & Harden
 
 **Goal:** Make app production‑ready.
 
