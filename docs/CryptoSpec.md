@@ -14,15 +14,15 @@ Last updated: 2025‑12‑13
 - Provide **encrypted local storage** for:
   - Private messages cached on device
   - Vault items (photos, videos, docs, notes)
-  - Private SMS inbox on Android (when enabled)
 - Provide **zero‑knowledge cloud storage**:
   - Backend relays ciphertext only
   - Backend cannot decrypt messages or attachments
 - Support **multi‑device** per user in the future (v1: 1–2 devices acceptable)
-- Provide **optional recovery** via a recovery phrase, without server‑held decryption keys
+- Provide **opt-in recovery** via a recovery phrase (Mode B), without server‑held decryption keys.
 
 ### 0.2 Non‑Goals
 
+- We do **not** support **Android SMS/MMS** in V1 (deferred to V2).
 - We do **not** protect against:
   - Compromised OS (rooted/jailbroken with full attacker control)
   - Hardware implants, baseband-level interception, or carrier call/SMS metadata
@@ -39,16 +39,15 @@ All claims in marketing and docs **must align** with this spec.
 
 ### 1.1 User identifiers
 
-- Primary application identifier: `user_id` (UUID v4), generated server‑side.
-- Optional discovery identifiers (not required to use app):
+- **Primary Application Identifier**: `user_id` (UUID v4), random and canonical.
+- **Discovery Identifiers (Optional)**:
   - Phone number (E.164 format)
   - Email address
-- Discovery identifiers are:
-  - Stored hashed (e.g. `H = HKDF-SHA256(salt, raw_identifier)` or `bcrypt/Argon2id`)
-  - Never logged in plaintext
-  - Only used for:
-    - Contact discovery (who else uses Speakeasy)
-    - Invites
+- **Policy**:
+  - Identity is pinned to `user_id` (UUID).
+  - Phone/Email are strictly for **discovery** (finding friends) and **account recovery** (proving ownership).
+  - Users CAN use the app without providing phone/email (using just UUID/Handle), though discovery will be harder.
+  - Discovery identifiers are stored **hashed** on the server.
 
 ### 1.2 Device identifiers
 

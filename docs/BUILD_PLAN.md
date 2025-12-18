@@ -18,9 +18,9 @@ This plan defines the recommended build order so that core security is implement
    - `docs/LoggingPolicy.md`
    - `docs/DataRetention.md`
 2. Confirm product decisions:
-   - Identity model (phone/email/handle)
-   - Recovery mode (no‑recovery vs recovery phrase)
-   - Whether Android Default SMS ships in v1 or v2
+   - [x] Identity model: **Random UUID Primary** (Phone/Email optional for discovery).
+   - [x] Recovery mode: **Mode B (Recovery Phrase)** enabled by default (opt-out).
+   - [x] Android SMS: **Deferred to V2**.
 
 ---
 
@@ -125,21 +125,9 @@ Tasks:
 
 ---
 
-## Phase 6 – Android Default SMS (Optional / Advanced)
+## Phase 6 – Android Default SMS (DEFERRED TO V2)
 
-**Goal:** Private SMS inbox on Android.
-
-Tasks:
-
-1. Implement SMS role request & receiver (in `android_sms_plugin_template`).
-2. Implement private/public routing:
-   - For private numbers → store ciphertext in local encrypted DB only
-   - For normal numbers → insert into Telephony provider as usual
-3. Integrate with vault key hierarchy for private SMS storage.
-4. Build UI for Private Inbox (SMS) inside Private Room.
-5. Ensure Play Store compliance for SMS permissions.
-
----
+**Status:** Deferred. V1 will not ship with default SMS handler capabilities to avoid Play Store permission friction and complex edge cases (MMS).
 
 ---
 
