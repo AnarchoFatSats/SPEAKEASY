@@ -1,10 +1,11 @@
 openapi: 3.0.3
 info:
-  title: Speakeasy API
-  version: 0.1.0
+  title: Speakeasy API (V1 Relay)
+  version: 0.1.1
 
 servers:
-  - url: https://api.speakeasy.example.com
+  - url: http://localhost:3000
+    description: Local Dev Relay
 
 paths:
   /health:

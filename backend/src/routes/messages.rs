@@ -20,12 +20,13 @@ pub struct InboxQuery {
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct InboxItem {
     pub id: Uuid, // message_id
+    pub to_user_id: Uuid,
+    pub to_device_id: Uuid,
     pub from_user_id: Uuid,
     pub from_device_id: Uuid,
     pub msg_type: String,
     pub ciphertext_b64: String,
     pub created_at: chrono::DateTime<chrono::Utc>, 
-    // sqlx maps TIMESTAMPTZ to chrono::DateTime<Utc>
 }
 
 // Map internal DB struct to API response struct if needed, or use FromRow directly 
@@ -99,7 +100,7 @@ pub async fn inbox(
             LIMIT 100 -- Limit batch size
             FOR UPDATE SKIP LOCKED
         )
-        RETURNING id, from_user_id, from_device_id, msg_type, ciphertext_b64, created_at
+        RETURNING id, to_user_id, to_device_id, from_user_id, from_device_id, msg_type, ciphertext_b64, created_at
         "#,
         claims.sub,
         target_device_id
