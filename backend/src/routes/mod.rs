@@ -7,6 +7,7 @@ pub mod devices;
 pub mod keys;
 pub mod messages;
 pub mod attachments;
+pub mod safety;
 
 pub async fn health() -> &'static str { "ok" }
 
@@ -16,7 +17,8 @@ pub fn router() -> Router<AppState> {
         .merge(devices::router())
         .merge(keys::router())
         .merge(messages::router())
-        .merge(attachments::router());
+        .merge(attachments::router())
+        .merge(safety::router());
 
     Router::new()
         .route("/health", axum::routing::get(health))

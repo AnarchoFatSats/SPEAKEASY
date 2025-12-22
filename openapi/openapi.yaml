@@ -129,6 +129,12 @@ paths:
       responses:
         '200':
           description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
 
   /v1/messages/inbox/{user_id}:
     get:
@@ -139,6 +145,12 @@ paths:
           required: true
           schema:
             type: string
+        - in: query
+          name: device_id
+          required: true
+          schema:
+            type: string
+            format: uuid
       security:
         - bearerAuth: []
       responses:
@@ -252,7 +264,14 @@ paths:
                 blocked_user_id: { type: string, format: uuid }
               required: [blocked_user_id]
       responses:
-        '200': { description: OK }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
 
   /v1/reports/submit:
     post:
@@ -271,7 +290,14 @@ paths:
                 decrypted_content: { type: string, description: "Optional decrypted proof" }
               required: [reported_user_id, reason]
       responses:
-        '200': { description: Report received }
+        '200':
+          description: Report received
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
 
 components:
   securitySchemes:

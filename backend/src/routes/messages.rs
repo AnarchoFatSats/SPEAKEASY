@@ -29,11 +29,7 @@ pub struct InboxItem {
     pub created_at: chrono::DateTime<chrono::Utc>, 
 }
 
-// Map internal DB struct to API response struct if needed, or use FromRow directly 
-#[derive(Debug, Serialize)]
-pub struct InboxResp {
-    pub items: Vec<InboxItem>
-}
+// Note: InboxItem is used directly as the response array item. 
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -75,7 +71,7 @@ pub async fn inbox(
     headers: HeaderMap,
     Path(user_id): Path<Uuid>,
     Query(q): Query<InboxQuery>,
-) -> Result<Json<InboxResp>, ApiError> {
+) -> Result<Json<Vec<InboxItem>>, ApiError> {
     let claims = require_auth(&headers, &state)?;
     
     // Security check: You can only fetch inbox for YOUR user_id
@@ -109,5 +105,5 @@ pub async fn inbox(
     .await
     .map_err(|e| { tracing::error!("inbox fetch: {}", e); ApiError::InternalServerError })?;
 
-    Ok(Json(InboxResp { items: messages }))
+    Ok(Json(messages))
 }
