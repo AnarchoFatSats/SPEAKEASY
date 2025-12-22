@@ -14,9 +14,8 @@ pub struct PresignReq {
 #[derive(Debug, Serialize)]
 pub struct PresignResp {
     pub attachment_id: Uuid,
-    pub object_key: String,
+    pub storage_key: String,
     pub upload_url: String,
-    pub expires_in_seconds: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -27,7 +26,6 @@ pub struct DownloadReq {
 #[derive(Debug, Serialize)]
 pub struct DownloadResp {
     pub download_url: String,
-    pub expires_in_seconds: i64,
 }
 
 pub fn router() -> Router<AppState> {
@@ -44,15 +42,12 @@ pub async fn presign(
     let claims = require_auth(&headers, &state)?;
     
     let attachment_id = Uuid::new_v4();
-    let object_key = format!("{}/{}.bin", claims.sub, attachment_id);
+    let storage_key = format!("{}/{}.bin", claims.sub, attachment_id);
     let expires_in = 600; // 10 minutes
 
-    let upload_url = state.bucket.presign_put(&object_key, expires_in as u32, Some(&req.content_type))
-        .map_err(|e| { tracing::error!("s3 presign put: {}", e); ApiError::InternalServerError })?;
+    let upload_url = state.bucket.presign_put(&storage_key, expires_in as u32, Some(&req.content_type))
+        .map_err(|e| { tracing::error!("s3 presign put: {}", e); ApiError::Internal })?;
 
-    // Record metadata in validations table?
-    // Current schema has `attachments` table: id, owner_user_id, storage_key, etc.
-    // Spec says we SHOULD insert.
     sqlx::query!(
         r#"
         INSERT INTO attachments (id, owner_user_id, storage_key, content_type, size_bytes)
@@ -60,19 +55,18 @@ pub async fn presign(
         "#,
         attachment_id,
         claims.sub,
-        object_key,
+        storage_key,
         req.content_type,
         req.size_bytes
     )
     .execute(&state.db)
     .await
-    .map_err(|e| { tracing::error!("db attach: {}", e); ApiError::InternalServerError })?;
+    .map_err(|e| { tracing::error!("db attach: {}", e); ApiError::Internal })?;
 
     Ok(Json(PresignResp {
         attachment_id,
-        object_key,
+        storage_key,
         upload_url,
-        expires_in_seconds: expires_in,
     }))
 }
 
@@ -83,23 +77,21 @@ pub async fn get_download_url(
 ) -> Result<Json<DownloadResp>, ApiError> {
     let _claims = require_auth(&headers, &state)?;
 
-    // Fetch attachment metadata to verify existence and get object key
     let meta = sqlx::query!(
         r#"SELECT storage_key FROM attachments WHERE id = $1 AND deleted = false"#,
         attachment_id
     )
     .fetch_optional(&state.db)
     .await
-    .map_err(|e| { tracing::error!("db attach get: {}", e); ApiError::InternalServerError })?;
+    .map_err(|e| { tracing::error!("db attach get: {}", e); ApiError::Internal })?;
 
     let meta = meta.ok_or(ApiError::NotFound("Attachment not found".into()))?;
 
     let expires_in = 3600; // 1 hour
     let download_url = state.bucket.presign_get(&meta.storage_key, expires_in as u32, None)
-        .map_err(|e| { tracing::error!("s3 presign get: {}", e); ApiError::InternalServerError })?;
+        .map_err(|e| { tracing::error!("s3 presign get: {}", e); ApiError::Internal })?;
 
     Ok(Json(DownloadResp {
         download_url,
-        expires_in_seconds: expires_in,
     }))
 }

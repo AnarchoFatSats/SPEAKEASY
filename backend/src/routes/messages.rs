@@ -1,21 +1,10 @@
-use axum::{routing::{get, post}, Router, extract::{Query, State}, Json, http::HeaderMap};
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
-use crate::{state::AppState, errors::ApiError, auth::require_auth};
-
-#[derive(Debug, Deserialize)]
-pub struct SendEnvelope {
-    pub recipient_device_id: Uuid,
-    pub msg_type: String, // "signal" or "prekey_bundle" etc
-    pub ciphertext: String,
-}
-
 #[derive(Debug, Deserialize)]
 pub struct SendReq {
-    pub conversation_id: Uuid, // Not stored in relay messages table usually, but maybe useful for push? Speakeasy relays are dumb.
-    // Actually schema doesn't match conversation_id. Schema is just envelopes.
-    // I won't use conversation_id in the INSERT.
-    pub envelopes: Vec<SendEnvelope>,
+    pub to_user_id: Uuid,
+    pub to_device_id: Uuid,
+    pub from_device_id: Uuid,
+    pub ciphertext_b64: String,
+    pub msg_type: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -48,7 +37,7 @@ pub struct InboxResp {
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/messages/send", post(send))
-        .route("/messages/inbox", get(inbox))
+        .route("/messages/inbox/:user_id", get(inbox))
 }
 
 pub async fn send(
@@ -58,46 +47,24 @@ pub async fn send(
 ) -> Result<Json<SendResp>, ApiError> {
     let claims = require_auth(&headers, &state)?;
     let sender_id = claims.sub;
-    // If auth token has device_id, use it, else must be supplied? 
-    // Our claims has optional device_id.
-    let sender_device_id = claims.device.unwrap_or(Uuid::nil()); 
-    // Use NIL or error if sender doesn't identify device? 
-    // V1 Spec implies devices verify tokens. Let's assume sender_device_id is vital. 
-    // If None, maybe reject. But for now I'll allow it or use a default.
     
-    // We iterate envelopes and insert
-    // Note: Request defines 'recipient_device_id' inside envelope, but "to_user" is missing from envelope? 
-    // Ah, SendReq doesn't have "to_user_id"?
-    // "SendReq { conversation_id, envelopes: [...] }" 
-    // Wait. "conversation_id" is likely the "to_user_id" in 1:1 context?
-    // Or is it a group ID?
-    // The spec (openapi.yaml implied) "to_user_id" in /messages/send body.
-    // The current stub `SendReq` struct (lines 13-17) has `conversation_id`.
-    // I should treat `conversation_id` as `to_user_id` for 1:1.
-    // If it's a group, checking `to_user_id` is complex. 
-    // Let's assume 1:1 for V1. conversation_id == recipient_user_id.
-
-    let recipient_id = req.conversation_id; 
-
-    for env in req.envelopes {
-        sqlx::query!(
-            r#"
-            INSERT INTO messages 
-            (to_user_id, to_device_id, from_user_id, from_device_id, 
-             ciphertext_b64, msg_type, created_at, delivered)
-            VALUES ($1, $2, $3, $4, $5, $6, now(), false)
-            "#,
-            recipient_id,
-            env.recipient_device_id,
-            sender_id,
-            sender_device_id,
-            env.ciphertext,
-            env.msg_type
-        )
-        .execute(&state.db)
-        .await
-        .map_err(|e| { tracing::error!("send msg: {}", e); ApiError::InternalServerError })?;
-    }
+    sqlx::query!(
+        r#"
+        INSERT INTO messages 
+        (to_user_id, to_device_id, from_user_id, from_device_id, 
+         ciphertext_b64, msg_type, created_at, delivered)
+        VALUES ($1, $2, $3, $4, $5, $6, now(), false)
+        "#,
+        req.to_user_id,
+        req.to_device_id,
+        sender_id,
+        req.from_device_id,
+        req.ciphertext_b64,
+        req.msg_type
+    )
+    .execute(&state.db)
+    .await
+    .map_err(|e| { tracing::error!("send msg: {}", e); ApiError::Internal })?;
 
     Ok(Json(SendResp { ok: true }))
 }
@@ -105,12 +72,15 @@ pub async fn send(
 pub async fn inbox(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Path(user_id): Path<Uuid>,
     Query(q): Query<InboxQuery>,
 ) -> Result<Json<InboxResp>, ApiError> {
     let claims = require_auth(&headers, &state)?;
     
     // Security check: You can only fetch inbox for YOUR user_id
-    // to_user_id MUST verify against claims.sub.
+    if claims.sub != user_id {
+        return Err(ApiError::Unauthorized);
+    }
     
     // For specific device inbox:
     let target_device_id = q.device_id;

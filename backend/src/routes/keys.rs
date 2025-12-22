@@ -18,6 +18,7 @@ pub struct OneTimePrekey {
 
 #[derive(Debug, Deserialize)]
 pub struct UploadBundleReq {
+    pub user_id: Uuid,
     pub device_id: Uuid,
     pub identity_key_ed25519_b64: String,
     pub static_x25519_b64: String,
@@ -33,15 +34,17 @@ pub struct UploadBundleResp { pub ok: bool }
 pub struct PrekeyBundleResp {
     pub user_id: Uuid,
     pub device_id: Uuid,
-    pub identity_key: String,
-    pub signed_prekey: SignedPrekey,
-    pub one_time_prekey: Option<OneTimePrekey>,
+    pub identity_key_ed25519_b64: String,
+    pub static_x25519_b64: String,
+    pub signed_prekey_x25519_b64: String,
+    pub signed_prekey_signature_b64: String,
+    pub one_time_prekey_b64: Option<String>,
 }
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/keys/upload_bundle", post(upload_bundle))
-        .route("/keys/fetch_bundle/:user_id", get(fetch_bundle))
+        .route("/keys/upload", post(upload_bundle))
+        .route("/keys/bundle/:user_id", get(fetch_bundle))
 }
 
 pub async fn upload_bundle(
@@ -51,7 +54,7 @@ pub async fn upload_bundle(
 ) -> Result<Json<UploadBundleResp>, ApiError> {
     let claims = require_auth(&headers, &state)?;
     // Ensure user requesting upload matches token
-    if claims.sub != claims.sub { return Err(ApiError::Unauthorized); } // redundant but safe logic pattern
+    if claims.sub != req.user_id { return Err(ApiError::Unauthorized); }
 
     // Upsert Identity/Signed Prekey Bundle
     sqlx::query!(
@@ -100,70 +103,57 @@ pub async fn fetch_bundle(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(user_id): Path<Uuid>,
-) -> Result<Json<PrekeyBundleResp>, ApiError> {
+) -> Result<Json<Vec<PrekeyBundleResp>>, ApiError> {
     let _claims = require_auth(&headers, &state)?;
 
-    // 1. Find a valid device for user (simplistic: pick most recently active or just first)
-    // In real Signal, you fetch bundles for ALL devices. 
-    // This endpoint returns *one* bundle (singular). 
-    // Spec says "/keys/bundle/{user_id}" -> "Prekey bundle". 
-    // If user has multiple devices, strict Signal protocol fetches all.
-    // For V1 MVP, we might fetch just one specific device or master device?
-    // Let's just fetch ANY device row from prekey_bundles.
-
-    let bundle = sqlx::query!(
+    // Fetch bundles for ALL devices of the user
+    let bundles = sqlx::query!(
         r#"
         SELECT user_id, device_id, identity_key_ed25519_b64, 
                static_x25519_b64, signed_prekey_x25519_b64, signed_prekey_signature_b64 
         FROM prekey_bundles 
-        WHERE user_id = $1 
-        LIMIT 1
+        WHERE user_id = $1
         "#,
         user_id
     )
-    .fetch_optional(&state.db)
-    .await.map_err(|_| ApiError::InternalServerError)?;
+    .fetch_all(&state.db)
+    .await.map_err(|e| { tracing::error!("db bundles fetch: {}", e); ApiError::Internal })?;
 
-    let bundle = match bundle {
-        Some(b) => b,
-        None => return Err(ApiError::NotFound("User not found or no keys".into())),
-    };
+    let mut results = Vec::new();
 
-    // 2. Consume one OTK
-    // We transactionally delete one unused key and return it.
-    let otk = sqlx::query!(
-        r#"
-        WITH popped AS (
-            SELECT id, prekey_x25519_b64 
-            FROM one_time_prekeys 
-            WHERE user_id = $1 AND device_id = $2 AND consumed_at IS NULL
-            LIMIT 1
-            FOR UPDATE SKIP LOCKED
+    for b in bundles {
+        // Pop one OTK per device
+        let otk = sqlx::query!(
+            r#"
+            WITH popped AS (
+                SELECT id, prekey_b64 
+                FROM one_time_prekeys 
+                WHERE user_id = $1 AND device_id = $2 AND consumed_at IS NULL
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            )
+            UPDATE one_time_prekeys 
+            SET consumed_at = now() 
+            FROM popped 
+            WHERE one_time_prekeys.id = popped.id
+            RETURNING popped.prekey_b64
+            "#,
+            user_id,
+            b.device_id
         )
-        UPDATE one_time_prekeys 
-        SET consumed_at = now() 
-        FROM popped 
-        WHERE one_time_prekeys.id = popped.id
-        RETURNING popped.id, popped.prekey_x25519_b64
-        "#,
-        user_id,
-        bundle.device_id
-    )
-    .fetch_optional(&state.db)
-    .await.map_err(|e| { tracing::error!("db otk: {}", e); ApiError::InternalServerError })?;
+        .fetch_optional(&state.db)
+        .await.map_err(|e| { tracing::error!("db otk pop: {}", e); ApiError::Internal })?;
 
-    Ok(Json(PrekeyBundleResp {
-        user_id,
-        device_id: bundle.device_id,
-        identity_key: bundle.identity_key_ed25519_b64,
-        signed_prekey: SignedPrekey { 
-            key_id: 1, // TODO: store key_id in DB 
-            public_key: bundle.signed_prekey_x25519_b64, 
-            signature: bundle.signed_prekey_signature_b64 
-        },
-        one_time_prekey: otk.map(|o| OneTimePrekey { 
-            key_id: o.id as i32, 
-            public_key: o.prekey_x25519_b64 
-        }),
-    }))
+        results.push(PrekeyBundleResp {
+            user_id,
+            device_id: b.device_id,
+            identity_key_ed25519_b64: b.identity_key_ed25519_b64,
+            static_x25519_b64: b.static_x25519_b64,
+            signed_prekey_x25519_b64: b.signed_prekey_x25519_b64,
+            signed_prekey_signature_b64: b.signed_prekey_signature_b64,
+            one_time_prekey_b64: otk.map(|o| o.prekey_b64),
+        });
+    }
+
+    Ok(Json(results))
 }
