@@ -11,6 +11,7 @@ pub struct RegisterReq {
     pub display_name: String,
     pub phone: Option<String>,
     pub email: Option<String>,
+    pub device_id: Option<Uuid>, 
 }
 
 #[derive(Debug, Serialize)]
@@ -24,6 +25,7 @@ pub struct LoginReq {
     pub phone: Option<String>,
     pub email: Option<String>,
     pub code: String,
+    pub device_id: Option<Uuid>,
 }
 
 pub fn router() -> Router<AppState> {
@@ -66,8 +68,9 @@ pub async fn register(
         ApiError::Internal 
     })?;
 
-    // Issue Token
-    let token = issue_token(&state.jwt_secret, user_id)?;
+    // Issue Token (Register doesn't necessarily set device_id immediately unless we add it to RegisterReq)
+    // For now, pass None (Phase 1 behavior) or we can expand    // Issue Token (Register doesn't necessarily set device_id immediately unless we add it to RegisterReq)
+    let token = issue_token(&state.jwt_secret, user_id, req.device_id)?;
 
     Ok(Json(AuthResp { user_id, access_token: token }))
 }
@@ -106,14 +109,14 @@ pub async fn login(
     let user_record = user.ok_or(ApiError::NotFound("User not found".into()))?;
 
     // 3. Issue Token
-    let token = issue_token(&state.jwt_secret, user_record.id)?;
+    let token = issue_token(&state.jwt_secret, user_record.id, req.device_id)?;
 
     Ok(Json(AuthResp { user_id: user_record.id, access_token: token }))
 }
 
-fn issue_token(secret: &str, user_id: Uuid) -> Result<String, ApiError> {
+fn issue_token(secret: &str, user_id: Uuid, device_id: Option<Uuid>) -> Result<String, ApiError> {
     let exp = (Utc::now() + Duration::days(30)).timestamp() as usize;
-    let claims = Claims { sub: user_id, device: None, exp };
+    let claims = Claims { sub: user_id, device: device_id, exp };
 
     jsonwebtoken::encode(
         &Header::new(Algorithm::HS256),

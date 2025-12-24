@@ -22,7 +22,7 @@ pub struct InboxItem {
     pub id: Uuid, // message_id
     pub to_user_id: Uuid,
     pub to_device_id: Uuid,
-    pub from_user_id: Uuid,
+    pub from_user_id: Uuid, 
     pub from_device_id: Uuid,
     pub msg_type: String,
     pub ciphertext_b64: String,
@@ -80,7 +80,9 @@ pub async fn inbox(
     }
     
     // For specific device inbox:
-    let target_device_id = q.device_id;
+    // Phase 2: Prefer device_id from token claims if present (secure binding)
+    // Fallback to query param for Phase 1 legacy tokens.
+    let target_device_id = claims.device.unwrap_or(q.device_id);
     // Provide simplistic "Fetch and Mark Delivered" logic (consume)
     
     let messages = sqlx::query_as!(
