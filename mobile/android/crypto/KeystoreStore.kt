@@ -2,22 +2,24 @@ package com.speakeasy.crypto
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
-import java.security.KeyStore
-import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
 import android.util.Base64
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 
 class KeystoreStore(context: Context) : SpeakeasyStore {
     
-    private val prefs: SharedPreferences = context.getSharedPreferences("speakeasy_crypto_store", Context.MODE_PRIVATE)
-    private val KEY_ALIAS = "speakeasy_master_key"
-    
-    // Simple helper to encrypt/decrypt blobs using Android Keystore
-    // In production, use EncryptedSharedPreferences or SQLCipher
+    // GPT REQUIREMENT: Use EncryptedSharedPreferences for production security.
+    private val masterKey = MasterKey.Builder(context)
+        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+        .build()
+
+    private val prefs: SharedPreferences = EncryptedSharedPreferences.create(
+        context,
+        "speakeasy_secure_store",
+        masterKey,
+        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+    )
     
     // Identity
     override fun getIdentityKeyPair(): ByteArray? {
