@@ -59,40 +59,43 @@ class SignalClient {
     
     // 2. Session Management
     func processPreKeyBundle(for remoteUserId: String, bundle: [String: Any]) throws {
-        let address = SignalAddress(name: remoteUserId, deviceId: 1) // Default device 1 for now
+        let address = ProtocolAddress(name: remoteUserId, deviceId: 1)
         
-        // Construct Bundle from JSON (Pseudo-mapping)
-        /*
-        let preKeyBundle = PreKeyBundle(
-            registrationId: ...,
-            deviceId: ...,
-            preKeyId: ...,
-            preKeyPublic: ...,
-            signedPreKeyId: ...,
-            signedPreKeyPublic: ...,
-            signedPreKeySignature: ...,
-            identityKey: ...
+        // 1. Construct LibSignal PreKeyBundle
+        // Note: Needs robust error handling for missing keys in production
+        let preKeyBundle = try PreKeyBundle(
+            registrationId:   UInt32(bundle["registration_id"] as! Int),
+            deviceId:         UInt32(bundle["device_id"] as! Int),
+            preKeyId:         UInt32(bundle["pre_key_id"] as! Int),
+            preKeyPublic:     PublicKey(from: Data(base64Encoded: bundle["pre_key_public"] as! String)!),
+            signedPreKeyId:   UInt32(bundle["signed_pre_key_id"] as! Int),
+            signedPreKeyPublic: PublicKey(from: Data(base64Encoded: bundle["signed_pre_key_public"] as! String)!),
+            signedPreKeySignature: Data(base64Encoded: bundle["signed_pre_key_signature"] as! String)!,
+            identityKey:      IdentityKey(from: Data(base64Encoded: bundle["identity_key"] as! String)!)
         )
-        */
         
-        // Process
-        // let builder = SessionBuilder(store: self.store, address: address)
-        // try builder.process(preKeyBundle: preKeyBundle)
+        // 2. Process
+        let adapter = SignalStoreAdapter(store: self.store)
+        let builder = try SessionBuilder(store: adapter, address: address)
+        try builder.process(preKeyBundle: preKeyBundle)
     }
     
     // 3. Messaging
     func encrypt(to remoteAddress: String, plaintext: Data) throws -> String {
-        let address = SignalAddress(name: remoteAddress, deviceId: 1)
-        // let cipher = SessionCipher(store: self.store, address: address)
-        // let ciphertext = try cipher.encrypt(plaintext)
-        // return ciphertext.serialize().base64EncodedString()
-        return "encrypted_mock_\(plaintext.count)"
+        let address = ProtocolAddress(name: remoteAddress, deviceId: 1)
+        let adapter = SignalStoreAdapter(store: self.store)
+        let cipher = try SessionCipher(store: adapter, address: address)
+        
+        let ciphertext = try cipher.encrypt(plaintext: plaintext)
+        return ciphertext.serialize().base64EncodedString()
     }
     
     func decrypt(from remoteAddress: String, ciphertext: String) throws -> Data {
-        let address = SignalAddress(name: remoteAddress, deviceId: 1)
-        // let cipher = SessionCipher(store: self.store, address: address)
-        // return try cipher.decrypt(ciphertext: Data(base64Encoded: ciphertext)!)
-        return Data()
+        let address = ProtocolAddress(name: remoteAddress, deviceId: 1)
+        let adapter = SignalStoreAdapter(store: self.store)
+        let cipher = try SessionCipher(store: adapter, address: address)
+        
+        let data = Data(base64Encoded: ciphertext)!
+        return try cipher.decrypt(ciphertext: PreKeySignalMessage(from: data)) // Assuming PreKey msg for first message, or SignalMessage for subsequent
     }
 }

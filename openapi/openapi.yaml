@@ -218,6 +218,52 @@ paths:
                   download_url:
                     type: string
 
+  /v1/attachments/complete:
+    post:
+      summary: Finalize an attachment after client uploads ciphertext to S3
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                attachment_id:
+                  type: string
+                  format: uuid
+                storage_key:
+                  type: string
+                sha256_ciphertext_b64:
+                  type: string
+                size_bytes:
+                  type: integer
+                content_type:
+                  type: string
+                enc_alg:
+                  type: string
+                  description: 'xchacha20poly1305 or aes256gcm'
+                nonce_b64:
+                  type: string
+              required:
+                - attachment_id
+                - storage_key
+                - sha256_ciphertext_b64
+                - size_bytes
+                - enc_alg
+                - nonce_b64
+      responses:
+        '200':
+          description: Attachment metadata finalized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+
   /v1/backup/upload:
     post:
       summary: Upload encrypted backup blob

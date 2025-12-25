@@ -28,9 +28,26 @@ pub struct DownloadResp {
     pub download_url: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CompleteReq {
+    pub attachment_id: Uuid,
+    pub storage_key: String,
+    pub sha256_ciphertext_b64: String,
+    pub size_bytes: i64,
+    pub content_type: Option<String>,
+    pub enc_alg: String,
+    pub nonce_b64: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct OkResp {
+    pub ok: bool,
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/attachments/presign", post(presign))
+        .route("/attachments/complete", post(complete_upload))
         .route("/attachments/url/:attachment_id", get(get_download_url))
 }
 
@@ -94,4 +111,52 @@ pub async fn get_download_url(
     Ok(Json(DownloadResp {
         download_url,
     }))
+}
+
+pub async fn complete_upload(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<CompleteReq>,
+) -> Result<Json<OkResp>, ApiError> {
+    let claims = require_auth(&headers, &state)?;
+
+    // Verify attachment exists and belongs to user
+    let existing = sqlx::query!(
+        r#"SELECT owner_user_id FROM attachments WHERE id = $1"#,
+        req.attachment_id
+    )
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| { tracing::error!("db complete lookup: {}", e); ApiError::Internal })?;
+
+    let record = existing.ok_or(ApiError::NotFound("Attachment not found".into()))?;
+    
+    if record.owner_user_id != claims.sub {
+        return Err(ApiError::Unauthorized);
+    }
+
+    // Update with ciphertext metadata
+    sqlx::query!(
+        r#"
+        UPDATE attachments 
+        SET sha256_ciphertext_b64 = $1,
+            enc_alg = $2,
+            nonce_b64 = $3,
+            size_bytes = $4,
+            content_type = COALESCE($5, content_type),
+            finalized = true
+        WHERE id = $6
+        "#,
+        req.sha256_ciphertext_b64,
+        req.enc_alg,
+        req.nonce_b64,
+        req.size_bytes,
+        req.content_type,
+        req.attachment_id
+    )
+    .execute(&state.db)
+    .await
+    .map_err(|e| { tracing::error!("db complete update: {}", e); ApiError::Internal })?;
+
+    Ok(Json(OkResp { ok: true }))
 }
